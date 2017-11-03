@@ -52,6 +52,20 @@ private:
         CallData(ServerContext *ctx):responder_(ctx),status(TOHANDLE){}
         enum CallStatus { TOHANDLE, FINISH };
         CallStatus status;
+        void process(){
+            //process the request from client;
+            //process should change the state of CallData from TOHANDLE to FINISH;
+            //should use a group of vendors to query the information that's asked by the client.
+
+        }
+
+        // What we get from the client.
+        ProductQuery request_;
+        // What we send back to the client.
+        ProductReply reply_;
+
+        // The means to get back to the client.
+        ServerAsyncResponseWriter<ProductReply> responder_;
     private:
 
         //seems like in our implementation, we don't need
@@ -63,19 +77,33 @@ private:
         //seems like in our implementation, we don't need
         //ServerContext ctx_;
 
-        // What we get from the client.
-        ProductQuery request_;
-        // What we send back to the client.
-        ProductReply reply_;
-
-        // The means to get back to the client.
-        ServerAsyncResponseWriter<ProductReply> responder_;
-
-
     };
 
     void HandlerRPCs(){
         //idea is: keep receiving and adding it to queue, will be queued by threadpool
+        CallData* to_fill = new CallData(&ctx_);
+        void* tag;
+        bool ok;
+
+        service_.RequestgetProducts(&ctx_, &(to_fill->request_), &(to_fill->responder_), cq_.get(), cq_.get(),
+                                      to_fill);
+            //doesn't block here.
+            //CallData can be in two states
+        while(true){
+            GPR_ASSERT(cq_->Next(&tag,&ok));
+            GPR_ASSERT(ok);
+            CallData* returned = static_cast<CallData*>(tag);
+            if(returned->status==CallData::TOHANDLE){
+                //lambda expression to provide work for thread.
+                pool_.enqueue([returned]() { returned->process(); });
+                CallData* to_fill_new = new CallData(&ctx_);
+                service_.RequestgetProducts(&ctx_, &(to_fill_new->request_), &(to_fill_new->responder_), cq_.get(), cq_.get(),
+                                            to_fill_new);
+            }else{
+                delete returned;
+            }
+
+        }
 
     }
 
@@ -88,7 +116,7 @@ private:
 
     ThreadPool pool_;
 
-    //what is this for ???
+    //what is this for???
     ServerContext ctx_;
 
 
