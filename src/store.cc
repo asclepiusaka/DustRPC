@@ -36,20 +36,19 @@ public:
 
 
 
-    StoreImp(size_t n_thread, std::string vendor_file): pool_(n_thread){
+    StoreImp(size_t n_thread, std::string vendor_file, const std::string listening_address): pool_(n_thread),server_address_port_(listening_address){
         vendor_addr_ = getVendorList(vendor_file);
     }
 
     void Run(){
-        //use 50056 since 50051~50055 is taken by vendors
-        std::string server_address_port("localhost:50056");
+
 
         ServerBuilder sb;//default initializer
-        sb.AddListeningPort(server_address_port,grpc::InsecureServerCredentials());
+        sb.AddListeningPort(server_address_port_,grpc::InsecureServerCredentials());
         sb.RegisterService(&service_);//register service;(no idea what is happening in the box)
         cq_ = sb.AddCompletionQueue();
         server_ = sb.BuildAndStart();
-        std::cout <<"Server listening on "<<server_address_port<<std::endl;
+        std::cout <<"Server listening on "<<server_address_port_<<std::endl;
 
         HandlerRPCs();
     }
@@ -80,50 +79,19 @@ private:
         CallData(std::vector<std::string> addr):vendorList_(addr),responder_(&sc),status(TOHANDLE){}
         enum CallStatus { TOHANDLE, FINISH };
         CallStatus status;
-        void process(){
+        void process() {
             //process the request from client;
             //process() should change the state of CallData from TOHANDLE to FINISH;
             //should use a group of vendors to query the information that's asked by the client.
             status = FINISH;
-            CompletionQueue vendor_cq;
-            //send all the query
-            for(std::string addr:vendorList_){
-                VendorQueryAgent *vendor = new VendorQueryAgent(grpc::CreateChannel(
-                        addr, grpc::InsecureChannelCredentials()),&vendor_cq);
-                vendor->getProductBid(request_);
+            for (auto &addr : vendorList_) {
+                VendorQueryAgent vendor(grpc::CreateChannel(
+                        addr, grpc::InsecureChannelCredentials()));
+                //query vendor and ad new entry to ProductReply
+                vendor.getProductBid(request_, reply_);
             }
-
-            for(int i=0;i<5;i++) {
-                void *got_tag;
-                bool ok = false;
-                //wait the five vendor query to get back. hanlde them and add to response data structure;
-                GPR_ASSERT(vendor_cq.Next(&got_tag, &ok));
-
-
-                // ... and that the request was completed successfully. Note that "ok"
-                // corresponds solely to the request for updates introduced by Finish().
-                GPR_ASSERT(ok);
-
-                // Act upon the status of the actual RPC.
-                if (!static_cast<VendorQueryAgent*>(got_tag)->status.ok()) {
-                    std::cout << static_cast<VendorQueryAgent*>(got_tag)->status.error_code() << ": "
-                              << static_cast<VendorQueryAgent*>(got_tag)->status.error_message()
-                              << std::endl;
-                }
-                BidReply *bidreply = &(static_cast<VendorQueryAgent*>(got_tag)->reply);
-
-                ProductInfo *product = reply_.add_products();
-                product->set_price(bidreply->price());
-                product->set_vendor_id(bidreply->vendor_id());
-                delete static_cast<VendorQueryAgent*>(got_tag);
-
-            }
-            responder_.Finish(reply_,Status::OK,this);
-
-
-
-
-
+            //after collecting data from all the vendors, send reply back to cllient.
+            responder_.Finish(reply_, Status::OK, this);
         }
 
         // What we get from the client.
@@ -138,41 +106,47 @@ private:
         public:
 
 
-            explicit VendorQueryAgent(std::shared_ptr<Channel> channel,CompletionQueue* shared_cq)
-                    : stub_(Vendor::NewStub(channel)),cq_(shared_cq) {}
+            explicit VendorQueryAgent(std::shared_ptr<Channel> channel)
+                    : stub_(Vendor::NewStub(channel)){}
 
             // Assembles the client's payload, sends it and presents the response back
             // from the server.
-            void getProductBid(const ProductQuery& request) {
+            bool getProductBid(const ProductQuery& request, ProductReply& result) {
+                // Data we are sending to the server.
                 BidQuery query;
                 query.set_product_name(request.product_name());
-
-
-
-                // Context for the client. It could be used to convey extra information to
-                // the server and/or tweak certain RPC behaviors.
+                BidReply reply;
                 ClientContext context;
 
-                // The producer-consumer queue we use to communicate asynchronously with the
-                // gRPC runtime.
+                CompletionQueue cq;
+                Status status;
 
 
-                // Storage for the status of the RPC upon completion.
-
-
-                // stub_->AsyncSayHello() performs the RPC call, returning an instance we
-                // store in "rpc". Because we are using the asynchronous API, we need to
-                // hold on to the "rpc" instance in order to get updates on the ongoing RPC.
                 std::unique_ptr<ClientAsyncResponseReader<BidReply> > rpc(
-                        stub_->PrepareAsyncgetProductBid(&context, query, cq_));
+                        stub_->PrepareAsyncgetProductBid(&context, query, &cq));
 
                 rpc->StartCall();
+                rpc->Finish(&reply, &status, (void*)1);
+                void* got_tag;
+                bool ok = false;
 
-                // Request that, upon completion of the RPC, "reply" be updated with the
-                // server's response; "status" with the indication of whether the operation
-                // was successful. Tag the request with the integer 1.
-                rpc->Finish(&reply, &status, (void*)this);
+                GPR_ASSERT(cq.Next(&got_tag, &ok));
+                GPR_ASSERT(got_tag == (void*)1);
 
+                GPR_ASSERT(ok);
+
+                // Act upon the status of the actual RPC.
+                if (!status.ok()) {
+                    std::cout << status.error_code() << ": " << status.error_message()
+                              << std::endl;
+                    return false;
+                }
+
+                //add a new entry in the response to client;
+                ProductInfo* product = result.add_products();
+                product->set_price(reply.price());
+                product->set_vendor_id(reply.vendor_id());
+                return true;
             }
 
             BidReply reply;
@@ -183,7 +157,6 @@ private:
             // Out of the passed in Channel comes the stub, stored here, our view of the
             // server's exposed services.
             std::unique_ptr<Vendor::Stub> stub_;
-            CompletionQueue* cq_;
         };
 
         //seems like in our implementation, we don't need
@@ -196,6 +169,7 @@ private:
         //ServerContext ctx_;
 
         std::vector<std::string> vendorList_;
+
 
     };
 
@@ -242,15 +216,22 @@ private:
 
     std::vector<std::string> vendor_addr_;
 
+    const std::string server_address_port_;
+
 
 
 };
 
 int main(int argc, char** argv) {
+    if(argc != 4){
+        std::cerr<<"supposse to have 3 arguments, usegae: store [vendor_file] [listening port] [number of thread]"<<std::endl;
+    }
+    int nThread = atoi(argv[1]);
     std::string vendor_file(argv[2]);
-	StoreImp store(4,vendor_file);
+    //use 50056 since 50051~50055 is taken by vendors
+    std::string address(argv[3]);
+	StoreImp store(static_cast<size_t>(nThread),vendor_file,address);
 	store.Run();
-	std::cout << "I 'm not ready yet!" << std::endl;
 	return EXIT_SUCCESS;
 }
 
