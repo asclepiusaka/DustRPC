@@ -11,7 +11,7 @@
 #include <functional>
 #include <stdexcept>
 
-//threadpool implementation found at github:
+//threadpool implementation found on github:
 //https://github.com/progschj/ThreadPool
 class ThreadPool {
 public:
