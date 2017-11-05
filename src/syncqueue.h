@@ -6,32 +6,41 @@
 template <typename T>
 class SyncQueue {
 public:
-	SyncQueue();
-	~SyncQUeue();
+	SyncQueue() {};
+	SyncQueue(SyncQueue& other) {};
+	~SyncQueue() {};
+	
 	bool empty();
 	int size();
 	void enqueue(T& t);
-	bool dequeue();
+	bool dequeue(T& t);
 private:
 	std::queue<T> queue;
 	std::mutex mutex;
 };
 
-SyncQueue::empty() {
+template <typename T>
+bool SyncQueue<T>::empty() {
 	//unique_lock will be released automatically when out of scope.
 	std::unique_lock<std::mutex> lock(mutex);
 	return queue.empty();
 }
-SyncQueue::size() {
-	std::unique_lock,std::mutex> lock(mutex);
+
+template <typename T>
+int SyncQueue<T>::size() {
+	std::unique_lock<std::mutex> lock(mutex);
 	return queue.size();
 }
-SyncQueue::enqueue(T& t) {
+
+template <typename T>
+void SyncQueue<T>::enqueue(T& t) {
 	std::unique_lock<std::mutex> lock(mutex);
 	queue.push(t);
 
 }
-SyncQueue::dequeue(T& t) {
+
+template <typename T>
+bool SyncQueue<T>::dequeue(T& t) {
 	std::unique_lock<std::mutex> lock(mutex);
 	if (queue.empty()) {
 		return false;
