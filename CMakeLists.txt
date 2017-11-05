@@ -18,7 +18,7 @@ set(SOURCE_FILES
         src/vendor.grpc.pb.h
         src/vendor.pb.cc
         src/vendor.pb.h
-        src/ThreadPool.h
+        src/syncqueue.h
         test/client.cc
         test/Makefile
         test/product_queries_util.h
