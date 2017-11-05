@@ -1,0 +1,10 @@
+To use the thread pool:
+
+Initialize thread pool like this-
+ThreadPool pool(<num_threads>);
+
+Enqueue task like this-
+pool.enqueue(f,args...);
+
+Shutdown the thread pool like this-
+pool.gentleTerminate();
