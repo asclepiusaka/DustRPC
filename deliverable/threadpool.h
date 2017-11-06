@@ -40,7 +40,7 @@ ThreadPool::ThreadPool(size_t threads) : shutdown(false) {
                     while(!this->shutdown) {
                         {
                             std::unique_lock<std::mutex> lock(this->queue_mutex);
-                            //TODO: modify to wait for non-empty
+
                             if (this->tasks.empty()) {
                                 this->conditional_lock.wait(lock);
                             }
@@ -64,7 +64,7 @@ auto ThreadPool::enqueue(F&& f, Args&&... args) -> std::future<decltype(f(args..
         (*task_ptr)();
     };
     tasks.enqueue(wrapper_task);
-    conditional_lock.notify_one();
+    conditional_lock.notify_all();
     return task_ptr->get_future();
 }
 
