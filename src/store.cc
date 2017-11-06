@@ -84,13 +84,17 @@ private:
             //process the request from client;
             //process() should change the state of CallData from TOHANDLE to FINISH;
             //should use a group of vendors to query the information that's asked by the client.
+            std::vector<ClientContext*> clientContextList;
+
             status = FINISH;
             CompletionQueue vendor_cq;
             //send all the query
             for(std::string addr:vendorList_){
+                ClientContext *ncc = new ClientContext();
                 VendorQueryAgent *vendor = new VendorQueryAgent(grpc::CreateChannel(
-                        addr, grpc::InsecureChannelCredentials()),&vendor_cq);
+                        addr, grpc::InsecureChannelCredentials()),&vendor_cq,ncc);
                 vendor->getProductBid(request_);
+                clientContextList.push_back(ncc);
             }
 
             for(int i=0;i<5;i++) {
@@ -118,11 +122,12 @@ private:
                 delete static_cast<VendorQueryAgent*>(got_tag);
 
             }
+            //clean all the contexts and vendorQueryAgents created
+            for(int i=0;i<5;i++){
+                delete clientContextList[i];
+            }
+
             responder_.Finish(reply_,Status::OK,this);
-
-
-
-
 
         }
 
@@ -138,8 +143,8 @@ private:
         public:
 
 
-            explicit VendorQueryAgent(std::shared_ptr<Channel> channel,CompletionQueue* shared_cq)
-                    : stub_(Vendor::NewStub(channel)),cq_(shared_cq) {}
+            explicit VendorQueryAgent(std::shared_ptr<Channel> channel,CompletionQueue* shared_cq,ClientContext *cc)
+                    : stub_(Vendor::NewStub(channel)),cq_(shared_cq),context(cc) {}
 
             // Assembles the client's payload, sends it and presents the response back
             // from the server.
@@ -151,7 +156,7 @@ private:
 
                 // Context for the client. It could be used to convey extra information to
                 // the server and/or tweak certain RPC behaviors.
-                ClientContext context;
+
 
                 // The producer-consumer queue we use to communicate asynchronously with the
                 // gRPC runtime.
@@ -164,7 +169,7 @@ private:
                 // store in "rpc". Because we are using the asynchronous API, we need to
                 // hold on to the "rpc" instance in order to get updates on the ongoing RPC.
                 std::unique_ptr<ClientAsyncResponseReader<BidReply> > rpc(
-                        stub_->PrepareAsyncgetProductBid(&context, query, cq_));
+                        stub_->PrepareAsyncgetProductBid(context, query, cq_));
 
                 rpc->StartCall();
 
@@ -178,6 +183,8 @@ private:
             BidReply reply;
 
             Status status;
+
+            ClientContext *context;
 
         private:
             // Out of the passed in Channel comes the stub, stored here, our view of the
