@@ -97,7 +97,7 @@ private:
                 clientContextList.push_back(ncc);
             }
 
-            for(int i=0;i<5;i++) {
+            for(int i=0;i<vendorList_.size();i++) {
                 void *got_tag;
                 bool ok = false;
                 //wait the five vendor query to get back. hanlde them and add to response data structure;
@@ -123,7 +123,7 @@ private:
 
             }
             //clean all the contexts and vendorQueryAgents created
-            for(int i=0;i<5;i++){
+            for(int i=0;i<vendorList_.size();i++){
                 delete clientContextList[i];
             }
 
