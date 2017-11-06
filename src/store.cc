@@ -1,6 +1,6 @@
 #include <grpc++/grpc++.h>
 #include <grpc/support/log.h>
-#include "ThreadPool.h"
+#include "threadpool.h"
 #include "store.grpc.pb.h"
 #include "vendor.grpc.pb.h"
 #include <iostream>
@@ -36,7 +36,7 @@ public:
 
 
 
-    StoreImp(size_t n_thread, std::string vendor_file): pool_(n_thread){
+    StoreImp(size_t n_thread, std::string vendor_file, const std::string listening_address): pool_(n_thread),server_address_port_(listening_address){
         vendor_addr_ = getVendorList(vendor_file);
     }
 
@@ -249,15 +249,22 @@ private:
 
     std::vector<std::string> vendor_addr_;
 
+    const std::string server_address_port_;
+
 
 
 };
 
 int main(int argc, char** argv) {
+    if(argc != 4){
+        std::cerr<<"supposse to have 3 arguments, usegae: store [number thread] [vendor_file] [listening port]"<<std::endl;
+    }
+    int nThread = atoi(argv[1]);
     std::string vendor_file(argv[2]);
-	StoreImp store(4,vendor_file);
-	store.Run();
-	std::cout << "I 'm not ready yet!" << std::endl;
-	return EXIT_SUCCESS;
+    //use 50056 since 50051~50055 is taken by vendors
+    std::string address(argv[3]);
+    StoreImp store(static_cast<size_t>(nThread),vendor_file,address);
+    store.Run();
+    return EXIT_SUCCESS;
 }
 
